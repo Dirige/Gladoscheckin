@@ -1,6 +1,6 @@
 name: auto check
 
-on:
+于:
   workflow_dispatch:
   push:
     branches: [ main ]
@@ -42,6 +42,7 @@ jobs:
       env:
         # env获取
         PUSHDEER_SENDKEY: ${{ secrets.PUSHDEER_SENDKEY }}
+        PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         GLADOS_COOKIES: ${{ secrets.GLADOS_COOKIES }}
         GLADOS_EXCHANGE_PLAN: ${{ secrets.GLADOS_EXCHANGE_PLAN }}
 
