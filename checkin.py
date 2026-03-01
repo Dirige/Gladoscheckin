@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 # ENVIRONMENT
 ENV_PUSH_KEY = "PUSHDEER_SENDKEY"
+ENV_PUSHPLUS_TOKEN = "PUSHPLUS_TOKEN"
 ENV_COOKIES = "GLADOS_COOKIES"
 ENV_EXCHANGE_PLAN = "GLADOS_EXCHANGE_PLAN"
 
@@ -47,8 +48,9 @@ HEADERS_TEMPLATE = {
 # Exchange Plan Points
 EXCHANGE_POINTS = {"plan100": 100, "plan200": 200, "plan500": 500} 
 
-def load_config() -> Tuple[str, List[str], str]:
+def load_config() -> Tuple[str, str, List[str], str]:
     push_key_env = os.environ.get(ENV_PUSH_KEY)
+    pushplus_token_env = os.environ.get(ENV_PUSHPLUS_TOKEN)
     raw_cookies_env = os.environ.get(ENV_COOKIES)
     exchange_plan_env = os.environ.get(ENV_EXCHANGE_PLAN)
 
@@ -57,6 +59,12 @@ def load_config() -> Tuple[str, List[str], str]:
         push_key = ''
     else:
         push_key = push_key_env
+
+    if not pushplus_token_env:
+        logger.warning(f"环境变量 '{ENV_PUSHPLUS_TOKEN}' 未设置。")
+        pushplus_token = ''
+    else:
+        pushplus_token = pushplus_token_env
 
     if not raw_cookies_env:
         logger.warning(f"环境变量 '{ENV_COOKIES}' 未设置。")
@@ -80,9 +88,10 @@ def load_config() -> Tuple[str, List[str], str]:
 
     logger.info(f"共加载了 {len(cookies_list)} 个 Cookie 用于签到。")
     logger.info(f"当前 {ENV_PUSH_KEY} {'已设置' if push_key_env else '未设置'}。")
+    logger.info(f"当前 {ENV_PUSHPLUS_TOKEN} {'已设置' if pushplus_token_env else '未设置'}。")
     logger.info(f"当前 {ENV_EXCHANGE_PLAN}: {exchange_plan}。")
 
-    return push_key, cookies_list, exchange_plan
+    return push_key, pushplus_token, cookies_list, exchange_plan
 
 
 def make_request(url: str, method: str, headers: Dict[str, str], data: Optional[Dict] = None, cookies: str = "") -> Optional[requests.Response]:
@@ -229,9 +238,38 @@ def format_push_content(results: List[Dict[str, str]]) -> Tuple[str, str]:
     return title, content
 
 
+def send_pushplus_notification(token: str, title: str, content: str) -> bool:
+    """
+    使用 pushplus 发送推送通知
+    """
+    pushplus_url = "http://www.pushplus.plus/send"
+    data = {
+        "token": token,
+        "title": title,
+        "content": content,
+        "template": "txt"
+    }
+    try:
+        response = requests.post(pushplus_url, json=data)
+        if response.ok:
+            result = response.json()
+            if result.get("code") == 200:
+                logger.info("Pushplus 推送通知发送成功。")
+                return True
+            else:
+                logger.error(f"Pushplus 推送通知发送失败: {result.get('msg')}")
+                return False
+        else:
+            logger.error(f"Pushplus 推送请求失败，状态码: {response.status_code}")
+            return False
+    except Exception as e:
+        logger.error(f"发送 Pushplus 推送通知时发生错误: {e}")
+        return False
+
+
 def main():
     try:
-        push_key, cookies_list, exchange_plan = load_config()
+        push_key, pushplus_token, cookies_list, exchange_plan = load_config()
 
         if not cookies_list:
             logger.error("未找到有效的 Cookie，退出程序。")
@@ -257,15 +295,21 @@ def main():
         logger.error(f"主程序执行过程中发生未预期的错误: {e}")
         title, content = "# 脚本执行出错", str(e)
 
-    if not push_key:
-        logger.info(f"未设置 '{ENV_PUSH_KEY}'，跳过推送通知。")
+    if not push_key and not pushplus_token:
+        logger.info("未设置推送通知，跳过推送。")
     else:
-        try:
-            pushdeer = PushDeer(pushkey=push_key)
-            pushdeer.send_text(title, desp=content)
-            logger.info("推送通知发送成功。")
-        except Exception as e:
-            logger.error(f"发送推送通知失败: {e}")
+        # 发送 PushDeer 推送
+        if push_key:
+            try:
+                pushdeer = PushDeer(pushkey=push_key)
+                pushdeer.send_text(title, desp=content)
+                logger.info("PushDeer 推送通知发送成功。")
+            except Exception as e:
+                logger.error(f"发送 PushDeer 推送通知失败: {e}")
+        
+        # 发送 Pushplus 推送
+        if pushplus_token:
+            send_pushplus_notification(pushplus_token, title, content)
 
 
 if __name__ == '__main__':
